@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-REPOSITORY="bifrost-proxy/BLEUnlock"
+REPOSITORY="Allan-yuwu/BLEUnlock"
 INSTALL_DIR="${BLEUNLOCK_INSTALL_DIR:-/Applications}"
 RELEASE_TAG="${BLEUNLOCK_VERSION:-}"
 LAUNCH_APP=1
@@ -15,7 +15,7 @@ Usage:
   install.sh [--version vX.Y.Z] [--install-dir DIR] [--no-launch]
 
 Environment variables:
-  BLEUNLOCK_VERSION       Release tag to install, for example v1.14.3
+  BLEUNLOCK_VERSION       Release tag to install, for example v1.15.3
   BLEUNLOCK_INSTALL_DIR   Destination directory (default: /Applications)
 EOF
 }
@@ -109,8 +109,16 @@ bundle_id="$(defaults read "${source_app}/Contents/Info" CFBundleIdentifier)"
 [[ "${bundle_id}" == "com.bifrost-proxy.BLEUnlock" ]] || \
   die "unexpected bundle identifier: ${bundle_id}"
 
-osascript -e 'tell application id "com.bifrost-proxy.BLEUnlock" to quit' >/dev/null 2>&1 || true
-osascript -e 'tell application id "com.github.Skyearn.BLEUnlock" to quit' >/dev/null 2>&1 || true
+expected_version="${RELEASE_TAG#v}"
+actual_version="$(defaults read "${source_app}/Contents/Info" CFBundleShortVersionString)"
+[[ "${actual_version}" == "${expected_version}" ]] || \
+  die "expected version ${expected_version}, got ${actual_version}"
+
+# A temporary-directory verification must not quit the user's installed app.
+if [[ "${INSTALL_DIR%/}" == "/Applications" ]]; then
+  osascript -e 'tell application id "com.bifrost-proxy.BLEUnlock" to quit' >/dev/null 2>&1 || true
+  osascript -e 'tell application id "com.github.Skyearn.BLEUnlock" to quit' >/dev/null 2>&1 || true
+fi
 
 copy_app() {
   rm -rf "${destination_app}"

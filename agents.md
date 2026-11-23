@@ -20,6 +20,7 @@ BLEUnlock 是原生 macOS 菜单栏应用，使用 Swift、Objective-C 和 C，�
 - Launcher Bundle ID：`com.bifrost-proxy.BLEUnlock.Launcher`
 - 最低部署版本：macOS 10.13
 - 正式主分支：`master`
+- 本 fork 发行仓库：`Allan-yuwu/BLEUnlock`；上游 `bifrost-proxy/BLEUnlock` 仅作为历史代码来源。
 - 正式发布入口：`.github/workflows/release.yml`
 - 详细发版说明：`docs/RELEASING.md`
 
@@ -111,7 +112,7 @@ Xcode 位于其他目录时应调整 `DEVELOPER_DIR`，不要擅自全局执行 
 | `BLEUnlock/LEDeviceInfo.swift` | 只读查询系统 Bluetooth SQLite 数据库 | 数据库不可用、字段为空、系统版本差异 |
 | `BLEUnlock/lowlevel.c`、`lowlevel.h` | 低层系统交互 | ABI、权限、macOS 兼容性 |
 | `BLEUnlock/checkUpdate.swift` | GitHub Release 检查和待更新状态 | 版本比较、网络失败、DMG 资源缺失 |
-| `BLEUnlock/AboutBox.swift` | About 窗口和外部链接 | URL 指向 `bifrost-proxy/BLEUnlock` |
+| `BLEUnlock/AboutBox.swift` | About 窗口和外部链接 | URL 指向 `Allan-yuwu/BLEUnlock` |
 | `Launcher/` | 旧系统登录启动 helper | Bundle 路径、重复启动、旧登录项迁移 |
 | `BLEUnlock/Base.lproj/` | 基础 XIB 和默认本地化 | 菜单连接、控件 identifier、默认文案 |
 | `BLEUnlock/*.lproj/` | 各语言字符串 | key 完整性、占位符和菜单含义一致 |
@@ -123,7 +124,7 @@ Xcode 位于其他目录时应调整 `DEVELOPER_DIR`，不要擅自全局执行 
 | `scripts/profile-background.sh` | 后台稳态 CPU/RSS 性能门禁 | 必须绑定真实设备执行发布验收；普通进程自测不能冒充发布结果 |
 | `.github/workflows/test.yml` | PR 和 master 的基础 CI | 安装脚本检查、无签名构建 |
 | `.github/workflows/test-build.yml` | 手动 packaging smoke test | 固定从 `master` checkout，不代表当前分支通过 |
-| `.github/workflows/release.yml` | tag 驱动的正式发布 | tag、Changelog、签名、公证、Release、Homebrew |
+| `.github/workflows/release.yml` | tag 驱动的正式发布 | tag、Changelog、签名、公证、GitHub Release、公开下载验收 |
 | `CHANGELOG.md`、`CHANGELOG.cn.md` | 英文和中文发布说明 | 版本标题严格一致 |
 | `docs/RELEASING.md` | 发布操作手册 | 必须与 workflow 保持一致 |
 
@@ -362,7 +363,7 @@ git diff
 | XIB/本地化 | build；启动 App；相关语言和菜单/窗口实测 |
 | `install.sh` | `bash -n`、`--help`、临时目录端到端安装、失败清理 |
 | CI workflow | YAML/脚本 review；对应 workflow 实际运行；检查触发分支/tag |
-| 发布链路 | Release build、tag/Changelog 校验、DMG、checksum、Release、Homebrew、干净机验收 |
+| 发布链路 | Release build、tag/Changelog 校验、DMG、checksum、GitHub Release、公开下载、干净机验收 |
 
 CI 通过后仍要确认它实际运行了与本次改动相关的 job。路径过滤、手动 workflow、从 `master` 固定 checkout 的构建都不能替代当前分支验证。
 
@@ -417,7 +418,7 @@ gh pr checks --watch --fail-fast
 - 版本符合 `X.Y.Z`，tag 符合 `vX.Y.Z`。
 - `CHANGELOG.md` 和 `CHANGELOG.cn.md` 都存在精确的 `## X.Y.Z` 标题，内容一致且无残留 Unreleased 条目遗漏。
 - `.github/workflows/test.yml` 在 tag 对应提交上通过。
-- `TAP_PUSH_TOKEN` 已配置；否则 Homebrew 更新会失败，不能宣称发布完成。
+- 本 fork 仅向 `Allan-yuwu/BLEUnlock` 发布 GitHub Release，不写上游 Homebrew Tap，不要求 `TAP_PUSH_TOKEN`。
 - 若声明“已签名/已公证”，必须确认全部签名和 Apple 凭据已配置并验证成功；缺少凭据时产物是未签名或未公证版本。
 
 ### 11.2 打 tag
@@ -433,9 +434,9 @@ git tag -a vX.Y.Z -m "BLEUnlock vX.Y.Z"
 git push origin vX.Y.Z
 ```
 
-tag 推送会触发 `.github/workflows/release.yml`，依次校验元数据、构建、按配置签名和公证、打包 DMG、生成 SHA-256、创建 GitHub Release 并更新 Homebrew Cask。
+tag 推送会触发 `.github/workflows/release.yml`，依次校验元数据、构建、按配置签名和公证、打包 DMG、生成 SHA-256、本地安装验证、创建 draft GitHub Release、验证上传产物、公开后进行匿名安装验收；失败时撤回 draft 并保留失败状态。
 
-`workflow_dispatch` 只用于重跑已经存在的 tag。不得把它当成从任意分支临时发布的入口。
+`workflow_dispatch` 只允许从本 fork 的 master 发起；该 SHA 的 master CI 成功、元数据、构建与本地 DMG/installer验收通过后，workflow 可按用户授权创建尚不存在的 annotated tag。已有 tag 必须匹配且不得移动。已公开Release不覆盖资产，只验收公开下载；细节以 docs/RELEASING.md 为准。
 
 ### 11.3 旧脚本和 Test Build 的边界
 
@@ -450,17 +451,17 @@ Release workflow 全绿后，在没有本地开发产物的 Mac 上验证：
 - checksum 可以通过，DMG 可挂载，App 可复制到 `/Applications` 并启动。
 - Bundle ID 为 `com.bifrost-proxy.BLEUnlock`，App 版本为 `X.Y.Z`。
 - 若本次发布承诺签名/公证，`codesign`、Gatekeeper 和 stapling 验证全部通过。
-- `brew install --cask bifrost-proxy/tap/unlock` 安装的版本和 SHA 与 Latest Release 一致。
+- 通过本 fork 的匿名公开 URL 下载 DMG/checksum，并验证版本、SHA 与 Latest Release 一致。
 - `install.sh` 能完成下载、checksum 校验、覆盖安装和启动。
-- App 内更新检查、About 链接和通知点击都指向 `bifrost-proxy/BLEUnlock`。
+- App 内更新检查、About 链接和通知点击都指向 `Allan-yuwu/BLEUnlock`。
 - 从旧 Bundle ID 升级时，偏好、钥匙串、登录项和 event 脚本迁移符合预期。
 - 权限重新授权和未签名版本的 Gatekeeper 限制已在发布说明中准确告知用户。
 
 ### 11.5 失败与回滚
 
-- Release 成功、Homebrew 失败：修复 tap 权限或 token 后重跑同一个 tag。
+- 公开安装验收失败：检查撤回 Latest / 转回 draft 步骤是否成功，报告真实状态；已公开资产不得覆盖，必要时发布新 patch 版本。
 - 构建或元数据失败：修复代码后发布新的 patch 版本；不要移动已经公开的 tag。
-- 严重问题：取消 Latest、按需要标记 pre-release，并将 Homebrew Cask 回退到上一个已验证版本。
+- 严重问题：取消 Latest、按需要标记 pre-release，并在用户授权范围内将该 Release 转回 draft。
 - 回滚也是外部写操作，必须有用户授权和可核验记录。
 
 ## 12. 完成定义（Definition of Done）
@@ -476,7 +477,7 @@ Release workflow 全绿后，在没有本地开发产物的 Mac 上验证：
 - 自动构建证据与真实 BLE/macOS 场景证据分开记录，没有把空 TestAction 当作测试通过。
 - 未触碰或混入用户既有改动，没有残留本机产物和敏感信息。
 - 除非用户明确豁免远端交付：变更已提交并推送，PR 已创建或更新，全部 CI checks 已结束且全绿；commit、PR URL 和 run id 可核验。
-- 若已授权发布：tag、Release workflow、DMG/checksum、Homebrew 和安装验收全部可核验；任一环节失败都不能称为发布完成。
+- 若已授权发布：tag、Release workflow、DMG/checksum、匿名公开下载和安装验收全部可核验；任一环节失败都不能称为发布完成。
 
 ## 13. 最终交付模板
 
@@ -487,7 +488,7 @@ Release workflow 全绿后，在没有本地开发产物的 Mac 上验证：
 3. **Review 闭环**：每轮发现、修复和复测结果。
 4. **验证矩阵**：命令/场景、结果、未执行原因。
 5. **Git/PR/CI**：分支、commit、PR、run 和状态（若适用）。
-6. **发布状态**：tag、Release、签名/公证、Homebrew、安装验收（仅发布任务）。
+6. **发布状态**：tag、Release、签名/公证、公开下载、安装验收（仅发布任务）。
 7. **残余风险**：没有则明确写“未发现阻塞残余风险”。
 
 禁止使用“应该没问题”“理论上可用”“测试通过”这类没有范围和证据的结论。

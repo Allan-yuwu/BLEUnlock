@@ -7,12 +7,13 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing vX.Y.Z tag to build and release"
+        description: "vX.Y.Z to publish from master, or an existing tag to verify"
         required: true
         type: string
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
@@ -20,20 +21,21 @@ concurrency:
 
 env:
   RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-  TAP_REPOSITORY: bifrost-proxy/homebrew-tap
 
 jobs:
   build-and-release:
     runs-on: macos-26
 
     steps:
-      - name: Checkout release tag
+      - name: Checkout master or existing release tag
         uses: actions/checkout@v6
         with:
-          ref: refs/tags/${{ env.RELEASE_TAG }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'refs/heads/master' || github.ref }}
           fetch-depth: 0
 
       - name: Validate release metadata
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -44,17 +46,40 @@ jobs:
           fi
 
           VERSION="${RELEASE_TAG#v}"
-          if ! grep -q "^## ${VERSION}$" CHANGELOG.md; then
-            echo "CHANGELOG.md has no section for ${VERSION}." >&2
+          for changelog in CHANGELOG.md CHANGELOG.cn.md; do
+            if ! grep -Fqx "## ${VERSION}" "${changelog}"; then
+              echo "${changelog} has no exact section for ${VERSION}." >&2
+              exit 1
+            fi
+          done
+          [[ "${GITHUB_REPOSITORY}" == "Allan-yuwu/BLEUnlock" ]] || {
+            echo "This workflow publishes Allan-yuwu/BLEUnlock only." >&2
             exit 1
-          fi
+          }
+          git merge-base --is-ancestor HEAD origin/master
 
-          TAG_COMMIT="$(git rev-list -n 1 "${RELEASE_TAG}")"
-          HEAD_COMMIT="$(git rev-parse HEAD)"
-          if [[ "${TAG_COMMIT}" != "${HEAD_COMMIT}" ]]; then
-            echo "Checked out ${HEAD_COMMIT}, but ${RELEASE_TAG} points to ${TAG_COMMIT}." >&2
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && "${GITHUB_REF}" != "refs/heads/master" ]]; then
+            echo "Dispatch releases from master only." >&2
             exit 1
           fi
+          HEAD_COMMIT="$(git rev-parse HEAD)"
+          if git show-ref --verify --quiet "refs/tags/${RELEASE_TAG}"; then
+            TAG_COMMIT="$(git rev-list -n 1 "${RELEASE_TAG}")"
+            [[ "${TAG_COMMIT}" == "${HEAD_COMMIT}" ]] || {
+              echo "Existing tag points to another commit; tags are never moved." >&2
+              exit 1
+            }
+            echo "RELEASE_TAG_EXISTS=1" >> "${GITHUB_ENV}"
+          else
+            [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]] || exit 1
+            echo "RELEASE_TAG_EXISTS=0" >> "${GITHUB_ENV}"
+          fi
+          PASSED_RUNS="$(gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/test.yml/runs" \
+            -f head_sha="${HEAD_COMMIT}" -f branch=master -f status=success --jq '.workflow_runs | length')"
+          [[ "${PASSED_RUNS}" -gt 0 ]] || {
+            echo "The current master commit has no successful CI workflow run." >&2
+            exit 1
+          }
 
       - name: Import code-signing certificate
         env:
@@ -231,7 +256,33 @@ jobs:
           Path("release-notes.md").write_text("\n\n".join(filter(None, notes)) + "\n")
           PY
 
-      - name: Create or update GitHub Release
+      - name: Test installer against verified local artifact
+        shell: bash
+        run: bash scripts/test-install-script.sh "build/Build/Products/Release/BLEUnlock-${RELEASE_TAG}.dmg" "${RELEASE_TAG}"
+
+      - name: Create annotated tag after local verification
+        if: ${{ env.RELEASE_TAG_EXISTS == '0' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          HEAD_COMMIT="$(git rev-parse HEAD)"
+          REMOTE_MASTER="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/master" --jq .object.sha)"
+          [[ "${REMOTE_MASTER}" == "${HEAD_COMMIT}" ]] || {
+            echo "Master advanced during the build; rerun from the new validated master." >&2
+            exit 1
+          }
+          TAG_OBJECT="$(gh api --method POST "repos/${GITHUB_REPOSITORY}/git/tags" \
+            -f tag="${RELEASE_TAG}" -f message="BLEUnlock ${RELEASE_TAG}" \
+            -f object="${HEAD_COMMIT}" -f type=commit --jq .sha)"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f ref="refs/tags/${RELEASE_TAG}" -f sha="${TAG_OBJECT}"
+          # GITHUB_TOKEN-created tags do not recursively start another run.
+          # This dispatch continues through draft / publish / public checks.
+
+      - name: Prepare draft and verify uploaded assets
+        id: prepare
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -239,99 +290,59 @@ jobs:
           set -euo pipefail
           DMG_PATH="build/Build/Products/Release/BLEUnlock-${RELEASE_TAG}.dmg"
           CHECKSUM_PATH="${DMG_PATH}.sha256"
-
-          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
-            gh release upload "${RELEASE_TAG}" "${DMG_PATH}" "${CHECKSUM_PATH}" --clobber
-            gh release edit "${RELEASE_TAG}" \
-              --title "BLEUnlock ${RELEASE_TAG}" \
-              --notes-file release-notes.md \
-              --latest
+          if gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            IS_DRAFT="$(gh release view "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --json isDraft --jq .isDraft)"
+            if [[ "${IS_DRAFT}" != "true" ]]; then
+              echo "Release already public: keep assets unchanged and verify the public installer."
+              echo "already_public=true" >> "${GITHUB_OUTPUT}"
+              exit 0
+            fi
+            gh release edit "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" \
+              --title "BLEUnlock ${RELEASE_TAG}" --notes-file release-notes.md
           else
-            gh release create "${RELEASE_TAG}" \
-              "${DMG_PATH}" \
-              "${CHECKSUM_PATH}" \
-              --verify-tag \
-              --title "BLEUnlock ${RELEASE_TAG}" \
-              --notes-file release-notes.md \
-              --latest
+            gh release create "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" \
+              --verify-tag --draft --title "BLEUnlock ${RELEASE_TAG}" --notes-file release-notes.md
           fi
+          gh release upload "${RELEASE_TAG}" "${DMG_PATH}" "${CHECKSUM_PATH}" \
+            --repo "${GITHUB_REPOSITORY}" --clobber
+          DRAFT_DIR="${RUNNER_TEMP}/draft-assets"
+          mkdir -p "${DRAFT_DIR}"
+          gh release download "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" \
+            --dir "${DRAFT_DIR}" --pattern 'BLEUnlock-*.dmg*' --clobber
+          (cd "${DRAFT_DIR}" && shasum -a 256 -c "$(basename "${CHECKSUM_PATH}")")
+          cmp "${DMG_PATH}" "${DRAFT_DIR}/$(basename "${DMG_PATH}")"
 
-      - name: Verify published installation script
+      - name: Publish verified draft
+        if: ${{ steps.prepare.outputs.already_public != 'true' }}
+        id: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          INSTALL_DIR="${RUNNER_TEMP}/script-install"
-          EXPECTED_VERSION="${RELEASE_TAG#v}"
-          mkdir -p "${INSTALL_DIR}"
+          gh release edit "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --draft=false --latest
 
+      - name: Verify anonymous public installation
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Draft assets have no anonymous download URL. Test the public path
+          # only after publishing; credentials are intentionally absent here.
+          INSTALL_DIR="${RUNNER_TEMP}/public-script-install"
+          mkdir -p "${INSTALL_DIR}"
           BLEUNLOCK_INSTALL_DIR="${INSTALL_DIR}" \
             bash install.sh --version "${RELEASE_TAG}" --no-launch
-
           APP_PATH="${INSTALL_DIR}/BLEUnlock.app"
-          ACTUAL_VERSION="$(defaults read "${APP_PATH}/Contents/Info" CFBundleShortVersionString)"
-          BUNDLE_ID="$(defaults read "${APP_PATH}/Contents/Info" CFBundleIdentifier)"
-          [[ "${ACTUAL_VERSION}" == "${EXPECTED_VERSION}" ]]
-          [[ "${BUNDLE_ID}" == "com.bifrost-proxy.BLEUnlock" ]]
+          [[ "$(defaults read "${APP_PATH}/Contents/Info" CFBundleShortVersionString)" == "${RELEASE_TAG#v}" ]]
+          [[ "$(defaults read "${APP_PATH}/Contents/Info" CFBundleIdentifier)" == "com.bifrost-proxy.BLEUnlock" ]]
           codesign --verify --deep --strict --verbose=4 "${APP_PATH}"
 
-      - name: Update Homebrew tap
+      - name: Withdraw release after public verification failure
+        if: ${{ failure() && steps.publish.outcome == 'success' }}
         env:
-          TAP_PUSH_TOKEN: ${{ secrets.TAP_PUSH_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          : "${TAP_PUSH_TOKEN:?TAP_PUSH_TOKEN must be configured to publish the Homebrew cask}"
-
-          VERSION="${RELEASE_TAG#v}"
-          DMG_PATH="build/Build/Products/Release/BLEUnlock-${RELEASE_TAG}.dmg"
-          SHA256="$(shasum -a 256 "${DMG_PATH}" | awk '{print $1}')"
-          TAP_DIR="${RUNNER_TEMP}/homebrew-tap"
-          CASK_PATH="${TAP_DIR}/Casks/unlock.rb"
-
-          QUARANTINE_POSTFLIGHT=""
-          if [[ "${APP_SIGNING_MODE:-adhoc}" == "adhoc" ]]; then
-            QUARANTINE_POSTFLIGHT=$'\n            # The release is SHA-256 verified and ad-hoc signed.\n            postflight do\n              system_command "/usr/bin/xattr",\n                             args: ["-dr", "com.apple.quarantine", "#{appdir}/BLEUnlock.app"]\n            end\n'
-          fi
-
-          git clone "https://x-access-token:${TAP_PUSH_TOKEN}@github.com/${TAP_REPOSITORY}.git" "${TAP_DIR}"
-          mkdir -p "$(dirname "${CASK_PATH}")"
-
-          cat > "${CASK_PATH}" <<CASK
-          cask "unlock" do
-            version "${VERSION}"
-            sha256 "${SHA256}"
-
-            url "https://github.com/bifrost-proxy/BLEUnlock/releases/download/v#{version}/BLEUnlock-v#{version}.dmg"
-            name "BLEUnlock"
-            desc "Lock and unlock a computer by proximity of a Bluetooth Low Energy device"
-            homepage "https://github.com/bifrost-proxy/BLEUnlock"
-
-            app "BLEUnlock.app"
-          ${QUARANTINE_POSTFLIGHT}
-
-            zap trash: [
-              "~/Library/Application Scripts/com.bifrost-proxy.BLEUnlock",
-              "~/Library/Application Scripts/com.github.Skyearn.BLEUnlock",
-              "~/Library/Preferences/com.bifrost-proxy.BLEUnlock.plist",
-              "~/Library/Preferences/com.github.Skyearn.BLEUnlock.plist",
-            ]
-          end
-          CASK
-
-          ruby -c "${CASK_PATH}"
-
-          cd "${TAP_DIR}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          if git diff --quiet -- Casks/unlock.rb && ! git ls-files --error-unmatch Casks/unlock.rb >/dev/null 2>&1; then
-            git add Casks/unlock.rb
-          elif git diff --quiet -- Casks/unlock.rb; then
-            echo "Homebrew tap is already up to date."
-            exit 0
-          else
-            git add Casks/unlock.rb
-          fi
-
-          git commit -m "Update unlock to ${RELEASE_TAG}"
-          git push origin HEAD:main
+          echo "Public installation verification failed; withdrawing this release to draft." >&2
+          gh release edit "${RELEASE_TAG}" --repo "${GITHUB_REPOSITORY}" --latest=false --draft=true

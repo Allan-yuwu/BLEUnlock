@@ -4,7 +4,7 @@ private let KEY = "lastUpdateCheck"
 private let INTERVAL = 24.0 * 60 * 60
 private var notified = false
 private var lastCheckAt = UserDefaults.standard.double(forKey: KEY)
-private let releasesURL = URL(string: "https://api.github.com/repos/bifrost-proxy/BLEUnlock/releases/latest")!
+private let releasesURL = URL(string: "https://api.github.com/repos/Allan-yuwu/BLEUnlock/releases/latest")!
 private let autoCheckUpdatesKey = "autoCheckUpdates"
 private let pendingUpdateVersionKey = "pendingUpdateVersion"
 private let pendingUpdateDownloadURLKey = "pendingUpdateDownloadURL"
@@ -51,6 +51,11 @@ func automaticUpdateChecksEnabled() -> Bool {
     return prefs.bool(forKey: autoCheckUpdatesKey)
 }
 
+func isForkReleaseURL(_ url: URL, asset: Bool = false) -> Bool {
+    url.scheme == "https" && url.host == "github.com" && url.user == nil && url.password == nil &&
+        url.path.hasPrefix(asset ? "/Allan-yuwu/BLEUnlock/releases/download/" : "/Allan-yuwu/BLEUnlock/releases/")
+}
+
 func pendingUpdate() -> PendingUpdate? {
     let prefs = UserDefaults.standard
     guard automaticUpdateChecksEnabled(),
@@ -60,17 +65,26 @@ func pendingUpdate() -> PendingUpdate? {
         return nil
     }
 
+    let downloadURL = prefs.string(forKey: pendingUpdateDownloadURLKey).flatMap(URL.init(string:))
+    guard isForkReleaseURL(releaseURL), downloadURL.map({ isForkReleaseURL($0, asset: true) }) ?? true else {
+        clearPendingUpdate()
+        return nil
+    }
+
     if let currentVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
        normalizedVersion(currentVersion) == normalizedVersion(version) {
         clearPendingUpdate()
         return nil
     }
 
-    let downloadURL = prefs.string(forKey: pendingUpdateDownloadURLKey).flatMap(URL.init(string:))
     return PendingUpdate(version: version, downloadURL: downloadURL, releaseURL: releaseURL)
 }
 
 func savePendingUpdate(version: String, downloadURL: URL?, releaseURL: URL) {
+    guard isForkReleaseURL(releaseURL), downloadURL.map({ isForkReleaseURL($0, asset: true) }) ?? true else {
+        clearPendingUpdate()
+        return
+    }
     let prefs = UserDefaults.standard
     prefs.set(version, forKey: pendingUpdateVersionKey)
     prefs.set(releaseURL.absoluteString, forKey: pendingUpdateReleaseURLKey)
@@ -120,14 +134,14 @@ private func parseReleaseInfo(from data: Data) -> ReleaseInfo? {
           let dict = json as? [String: Any],
           let version = dict["tag_name"] as? String,
           let htmlURLString = dict["html_url"] as? String,
-          let releaseURL = URL(string: htmlURLString) else {
+          let releaseURL = URL(string: htmlURLString), isForkReleaseURL(releaseURL) else {
         return nil
     }
 
     let assets = (dict["assets"] as? [[String: Any]] ?? []).compactMap { assetDict -> ReleaseAsset? in
         guard let name = assetDict["name"] as? String,
               let downloadURLString = assetDict["browser_download_url"] as? String,
-              let downloadURL = URL(string: downloadURLString) else {
+              let downloadURL = URL(string: downloadURLString), isForkReleaseURL(downloadURL, asset: true) else {
             return nil
         }
         return ReleaseAsset(name: name, downloadURL: downloadURL)

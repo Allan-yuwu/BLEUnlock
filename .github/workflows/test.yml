@@ -26,8 +26,12 @@ jobs:
         bash -n scripts/sign-macos-app.sh
         bash -n scripts/verify-macos-dmg.sh
         bash -n scripts/test-update-installer.sh
+        bash -n scripts/test-update-routes.sh
+        bash -n scripts/test-install-script.sh
     - name: Device pause regression tests
       run: bash scripts/test-device-pause.sh
+    - name: Fork update route regression tests
+      run: bash scripts/test-update-routes.sh
     - name: Build release configuration
       run: |
         xcodebuild clean build \
