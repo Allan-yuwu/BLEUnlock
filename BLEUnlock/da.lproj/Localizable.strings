@@ -44,3 +44,11 @@
 "wake_on_proximity" = "Vågn op på nærhed";
 "wake_without_unlocking" = "Vågn op uden at låse op";
 "pair_for_mac_hint" = "Pair to stabilize random address tracking →";
+
+/* Manual device pause; watch state is not inferred. */
+"device_pause_menu" = "Pause / Resume Device";
+"watch_state_unknown" = "Watch wear / charging state: unknown (manual control)";
+"device_pause_format" = "Pause %@ — taking off / charging";
+"device_resume_format" = "Resume %@ — manually paused";
+"all_devices_manually_paused" = "All devices manually paused";
+"some_devices_manually_paused" = "%d of %d devices manually paused";

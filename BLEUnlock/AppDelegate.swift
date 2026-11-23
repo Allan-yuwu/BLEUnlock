@@ -154,6 +154,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
     let ble = BLE()
     let mainMenu = NSMenu()
     var deviceMenu = NSMenu()
+    var devicePauseMenu = NSMenu()
+    var automaticActionGeneration = 0
     let unlockSettingsMenu = NSMenu()
     let lockSettingsMenu = NSMenu()
     let timeoutMenu = NSMenu()
@@ -228,7 +230,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
     }
 
     func menuWillOpen(_ menu: NSMenu) {
-        if menu == deviceMenu {
+        if menu == devicePauseMenu {
+            refreshDevicePauseMenu()
+        } else if menu == deviceMenu {
             deviceMenuIsOpen = false
             refreshDeviceMenuSelectionStates(removeStale: false)
             deviceMenuNeedsRefresh = false
@@ -1136,6 +1140,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
             return (uuid, rssi)
         }
 
+        let pausedCount = orderedUUIDs.filter { ble.isManuallyPaused($0) }.count
+        if pausedCount == orderedUUIDs.count { return t("all_devices_manually_paused") }
+        if pausedCount > 0 { return String(format: t("some_devices_manually_paused"), pausedCount, orderedUUIDs.count) }
+
         if let strongest = visibleDevices.max(by: { $0.1 < $1.1 }) {
             let detected = visibleDevices.count
             return String(format: t("monitor_status_strongest_detected"), detected, orderedUUIDs.count, strongest.1)
@@ -1530,8 +1538,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
         }
     }
 
-    func lockOrSaveScreenAsync() {
+    func lockOrSaveScreenAsync(automatic: Bool = false) {
+        let generation = automaticActionGeneration
         DispatchQueue.main.async {
+            if automatic {
+                guard generation == self.automaticActionGeneration, self.ble.shouldLock,
+                      !self.ble.presence, !self.systemSleep else { return }
+            }
             self.lockOrSaveScreen()
         }
     }
@@ -1583,7 +1596,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
         } else if shouldLock {
             if (!isScreenLocked() && ble.lockRSSI != ble.LOCK_DISABLED) {
                 pauseNowPlaying()
-                lockOrSaveScreenAsync()
+                lockOrSaveScreenAsync(automatic: true)
                 notifyUser(reason)
                 runScript(reason)
             }
@@ -1680,6 +1693,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
                 }
                 return
             }
+            guard self.ble.presence, !self.manualLock, !self.systemSleep, !self.displaySleep,
+                  self.ble.unlockRSSI != self.ble.UNLOCK_DISABLED,
+                  !self.prefs.bool(forKey: "wakeWithoutUnlocking") else { return }
             guard let password = self.fetchPassword(warn: true) else { return }
             
             self.unlockedAt = Date().timeIntervalSince1970
@@ -1795,6 +1811,35 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
         print("screensaver stop")
         inScreensaver = false
         lastScreensaverStartedAt = 0
+    }
+
+    func refreshDevicePauseMenu() {
+        devicePauseMenu.removeAllItems()
+        let hint = devicePauseMenu.addItem(withTitle: t("watch_state_unknown"), action: nil, keyEquivalent: "")
+        hint.isEnabled = false
+        devicePauseMenu.addItem(NSMenuItem.separator())
+        for uuid in ble.monitoredUUIDs.sorted(by: { monitoredDeviceTitle(uuid: $0) < monitoredDeviceTitle(uuid: $1) }) {
+            let paused = ble.isManuallyPaused(uuid)
+            let title = String(format: t(paused ? "device_resume_format" : "device_pause_format"), monitoredDeviceTitle(uuid: uuid))
+            let item = devicePauseMenu.addItem(withTitle: title, action: #selector(toggleDevicePause(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = uuid.uuidString
+            item.state = paused ? .on : .off
+        }
+        if ble.monitoredUUIDs.isEmpty {
+            devicePauseMenu.addItem(withTitle: t("device_not_set"), action: nil, keyEquivalent: "")
+        }
+    }
+
+    @objc func toggleDevicePause(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let uuid = UUID(uuidString: raw) else { return }
+        automaticActionGeneration += 1
+        wakeUnlockTimer?.invalidate()
+        wakeUnlockTimer = nil
+        postUnlockRetryTimer?.invalidate()
+        postUnlockRetryTimer = nil
+        ble.setManuallyPaused(!ble.isManuallyPaused(uuid), for: uuid)
+        updateMonitorStatusItems()
     }
 
     @objc func toggleDeviceCheckbox(_ sender: NSButton) {
@@ -2385,6 +2430,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
         scanItem.isEnabled = false
         deviceMenu.addItem(scanItem)
         scanningMenuItem = scanItem
+
+        let pauseItem = mainMenu.addItem(withTitle: t("device_pause_menu"), action: nil, keyEquivalent: "")
+        pauseItem.submenu = devicePauseMenu
+        devicePauseMenu.delegate = self
 
         let unlockSettingsItem = mainMenu.addItem(withTitle: t("unlock_settings"), action: nil, keyEquivalent: "")
         unlockSettingsItem.submenu = unlockSettingsMenu

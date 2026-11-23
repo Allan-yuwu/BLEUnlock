@@ -299,3 +299,11 @@ They are originally designed by Google LLC and licensed under Apache License ver
 MIT
 
 Copyright © 2019-2022 Takeshi Sone. MIT Licensed.<br>Copyright © 2026 Skyearn. MIT Licensed.
+
+### Manually pause a device while taking off or charging your watch
+
+Choose **Pause / Resume Device** from the menu bar, then pause the bound Apple Watch. Resume it after putting it back on. This per-device manual control also supports other BLE devices; names are not treated as proof of device type.
+
+Paused devices contribute to neither automatic lock nor unlock, including signal-loss locking. Other devices keep their any/all rules. With all devices paused, BLEUnlock takes no automatic action; macOS locking and Lock Screen Now remain available. The pause persists across app restarts, sleep/wake, recognized UUID rotation, and re-binding the same UUID until manually resumed.
+
+Resuming clears cached proximity. Only a fresh close reading may unlock; weak readings use the lock delay and missing readings use the signal timeout. Wear/charging status is explicitly **unknown**: this release does not automatically detect either state. See [feasibility and verification](docs/APPLE_WATCH_PAUSE.md).

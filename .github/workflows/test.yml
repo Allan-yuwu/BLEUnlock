@@ -26,6 +26,8 @@ jobs:
         bash -n scripts/sign-macos-app.sh
         bash -n scripts/verify-macos-dmg.sh
         bash -n scripts/test-update-installer.sh
+    - name: Device pause regression tests
+      run: bash scripts/test-device-pause.sh
     - name: Build release configuration
       run: |
         xcodebuild clean build \

@@ -328,7 +328,8 @@ enum LockDeviceLogic: Int {
 }
 
 class MonitoredDeviceState {
-    let uuid: UUID
+    var uuid: UUID
+    var participation = DeviceParticipation()
     var peripheral: CBPeripheral?
     var proximityTimer: Timer?
     var signalTimer: Timer?
@@ -415,6 +416,33 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         }
     }
     var monitoredStates: [UUID: MonitoredDeviceState] = [:]
+    private var manuallyPausedUUIDs = Set((UserDefaults.standard.stringArray(forKey: "manuallyPausedDevices") ?? []).compactMap(UUID.init(uuidString:)))
+
+    func isManuallyPaused(_ uuid: UUID) -> Bool { manuallyPausedUUIDs.contains(uuid) }
+
+    private func persistManualPauses() {
+        UserDefaults.standard.set(manuallyPausedUUIDs.map(\.uuidString).sorted(), forKey: "manuallyPausedDevices")
+    }
+
+    func setManuallyPaused(_ paused: Bool, for uuid: UUID) {
+        guard let state = monitoredStates[uuid], isManuallyPaused(uuid) != paused else { return }
+        if paused { manuallyPausedUUIDs.insert(uuid) } else { manuallyPausedUUIDs.remove(uuid) }
+        persistManualPauses()
+        stopMonitoring(state)
+        state.lastRSSI = nil
+        state.lastReadAt = 0
+        state.rssiWindow.removeAll()
+        state.presence = true
+        state.participation.setPaused(paused)
+        if !paused && !monitoringSuspended { resetSignalTimer(for: state) }
+        // A menu action must never reuse cached proximity to unlock or lock.
+        // The next measurement / timeout evaluates the remaining devices.
+        presence = false
+        shouldLock = false
+        updateAggregateRSSI()
+        updateScanStateForCurrentMode()
+    }
+
 
     /// Remap monitored UUID when a physical device's UUID rotates (e.g. privacy rotation).
     /// Transfers monitoredState to the new peripheral and persists the updated set.
@@ -427,9 +455,14 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         var updatedUUIDs = monitoredUUIDs
         updatedUUIDs.remove(oldUUID)
         updatedUUIDs.insert(newUUID)
-        if let oldState = monitoredStates.removeValue(forKey: oldUUID), let p = peripheral {
-            oldState.peripheral = p
+        if let oldState = monitoredStates.removeValue(forKey: oldUUID) {
+            oldState.uuid = newUUID
+            oldState.peripheral = peripheral
             monitoredStates[newUUID] = oldState
+        }
+        if manuallyPausedUUIDs.remove(oldUUID) != nil {
+            manuallyPausedUUIDs.insert(newUUID)
+            persistManualPauses()
         }
         monitoredUUIDs = updatedUUIDs
         UserDefaults.standard.set(monitoredUUIDs.map { $0.uuidString }, forKey: "devices")
@@ -509,7 +542,9 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
 
     var canPauseScanForActiveMonitoring: Bool {
         guard !deviceDiscoveryEnabled, !passiveMode, !monitoredStates.isEmpty else { return false }
-        return monitoredStates.values.allSatisfy { state in
+        let states = monitoredStates.values.filter { !$0.participation.paused }
+        guard !states.isEmpty else { return true }
+        return states.allSatisfy { state in
             state.active && state.peripheral?.state == .connected
         }
     }
@@ -647,6 +682,13 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         guard monitoringSuspended else { return }
         monitoringSuspended = false
         guard scanMode || !monitoredUUIDs.isEmpty else { return }
+        for state in monitoredStates.values {
+            state.presence = true
+            state.participation.setPaused(isManuallyPaused(state.uuid))
+            if !state.participation.paused { resetSignalTimer(for: state) }
+        }
+        presence = false
+        shouldLock = false
         scanForPeripherals()
     }
 
@@ -690,10 +732,12 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             }
 
             monitoredStates[uuid] = state
-            resetSignalTimer(for: state)
+            state.participation.setPaused(isManuallyPaused(uuid))
+            if !state.participation.paused { resetSignalTimer(for: state) }
+            else { stopMonitoring(state); state.lastRSSI = nil }
         }
 
-        presence = !uuids.isEmpty
+        presence = false
         shouldLock = false
         updateAggregateRSSI()
         if !uuids.isEmpty {
@@ -713,26 +757,13 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     }
 
     func updateAggregatePresence(reason: String, notify: Bool = true) {
-        let states = monitoredUUIDs.compactMap { monitoredStates[$0] }
-        let newPresence: Bool
-        let newShouldLock: Bool
-        if states.isEmpty {
-            newPresence = false
-            newShouldLock = false
-        } else {
-            switch unlockDeviceLogic {
-            case .anyClose:
-                newPresence = states.contains(where: { $0.presence })
-            case .allClose:
-                newPresence = states.allSatisfy { $0.presence }
-            }
-            switch lockDeviceLogic {
-            case .allAway:
-                newShouldLock = states.allSatisfy { !$0.presence }
-            case .anyAway:
-                newShouldLock = states.contains(where: { !$0.presence })
-            }
+        let snapshots = monitoredUUIDs.compactMap { monitoredStates[$0] }.map {
+            DevicePresenceSnapshot(participation: $0.participation, nearby: $0.presence)
         }
+        let result = aggregateDevicePresence(snapshots,
+            unlockAll: unlockDeviceLogic == .allClose, lockAny: lockDeviceLogic == .anyAway)
+        let newPresence = result.unlock
+        let newShouldLock = result.lock
         guard newPresence != presence || newShouldLock != shouldLock else { return }
         presence = newPresence
         shouldLock = newShouldLock
@@ -742,16 +773,19 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     }
 
     func updateAggregateRSSI() {
-        let visibleStates = monitoredStates.values.filter { $0.lastRSSI != nil }
+        let visibleStates = monitoredStates.values.filter { !$0.participation.paused && $0.lastRSSI != nil }
         let bestRSSI = visibleStates.compactMap(\.lastRSSI).max()
         let active = visibleStates.contains(where: { $0.active })
         delegate?.updateRSSI(rssi: bestRSSI, active: active)
     }
 
     func resetSignalTimer(for state: MonitoredDeviceState) {
+        guard !state.participation.paused else { return }
         state.signalTimer?.invalidate()
         state.signalTimer = Timer.scheduledTimer(withTimeInterval: signalTimeout, repeats: false, block: { [weak self, weak state] _ in
             guard let self = self, let state = state else { return }
+            guard !state.participation.paused, !self.monitoringSuspended else { return }
+            state.participation.acceptFreshSignal()
             print("Device \(state.uuid) is lost")
             state.lastRSSI = nil
             state.activeModeTimer?.invalidate()
@@ -819,6 +853,11 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
     }
 
     func updateMonitoredState(_ state: MonitoredDeviceState, rssi: Int) {
+        guard !state.participation.paused else { return }
+        state.participation.acceptFreshSignal()
+        if rssi >= (unlockRSSI == UNLOCK_DISABLED ? lockRSSI : unlockRSSI) {
+            state.participation.confirmCloseSignal()
+        }
         if rssi >= (unlockRSSI == UNLOCK_DISABLED ? lockRSSI : unlockRSSI) && !state.presence {
             print("Device \(state.uuid) is close")
             state.presence = true
@@ -839,6 +878,7 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
         } else if state.presence && state.proximityTimer == nil {
             state.proximityTimer = Timer.scheduledTimer(withTimeInterval: proximityTimeout, repeats: false, block: { [weak self, weak state] _ in
                 guard let self = self, let state = state else { return }
+                guard !state.participation.paused, !self.monitoringSuspended else { return }
                 print("Device \(state.uuid) is away")
                 state.presence = false
                 self.updateAggregatePresence(reason: "away")
@@ -850,6 +890,7 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             print("Proximity timer started for \(state.uuid)")
         }
         resetSignalTimer(for: state)
+        updateAggregatePresence(reason: "away")
     }
 
     func monitoredState(for peripheral: CBPeripheral) -> MonitoredDeviceState? {
@@ -858,7 +899,7 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
 
     func connectMonitoredPeripheral(_ state: MonitoredDeviceState) {
         guard let p = state.peripheral else { return }
-        guard !monitoringSuspended else { return }
+        guard !monitoringSuspended, !state.participation.paused else { return }
         guard centralMgr.state == .poweredOn else { return }
 
         if p.state == .connected {
@@ -1093,6 +1134,10 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
             cancelConnectionIfNeeded(peripheral)
             return
         }
+        if let state = monitoredState(for: peripheral), state.participation.paused {
+            cancelConnectionIfNeeded(peripheral)
+            return
+        }
         if let state = monitoredState(for: peripheral), !passiveMode {
             print("Connected \(state.uuid)")
             state.connectionTimer?.invalidate()
@@ -1130,7 +1175,7 @@ class BLE: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
 
     func peripheral(_ peripheral: CBPeripheral, didReadRSSI RSSI: NSNumber, error: Error?) {
         guard !monitoringSuspended else { return }
-        guard let state = monitoredState(for: peripheral) else { return }
+        guard let state = monitoredState(for: peripheral), !state.participation.paused else { return }
         let rssi = RSSI.intValue >= 0 ? -100 : RSSI.intValue
         updateMonitoredState(state, rssi: rssi)
         state.lastReadAt = Date().timeIntervalSince1970

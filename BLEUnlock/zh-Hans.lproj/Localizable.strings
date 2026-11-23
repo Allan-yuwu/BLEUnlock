@@ -70,3 +70,11 @@
 "wake_on_proximity" = "靠近唤醒";
 "wake_without_unlocking" = "唤醒时不需解锁";
 "pair_for_mac_hint" = "配对以稳定追踪随机地址 →";
+
+/* Manual device pause; watch state is not inferred. */
+"device_pause_menu" = "暂停／恢复设备";
+"watch_state_unknown" = "手表佩戴／充电状态：未知（手动控制）";
+"device_pause_format" = "暂停 %@ — 摘下／充电时";
+"device_resume_format" = "恢复 %@ — 已手动暂停";
+"all_devices_manually_paused" = "所有设备已手动暂停";
+"some_devices_manually_paused" = "%d／%d 台设备已手动暂停";
