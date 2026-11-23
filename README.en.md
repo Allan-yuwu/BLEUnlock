@@ -302,7 +302,7 @@ Copyright © 2019-2022 Takeshi Sone. MIT Licensed.<br>Copyright © 2026 Skyearn.
 
 ### Manually pause a device while taking off or charging your watch
 
-Choose **Pause / Resume Device** from the menu bar, then pause the bound Apple Watch. Resume it after putting it back on. This per-device manual control also supports other BLE devices; names are not treated as proof of device type.
+Choose **Pause / Resume Device**, verify **Current selected device: XXX**, then choose the separate **Pause** or **Resume** action. ✅ marks the current state: **✅ Pause** means paused; **✅ Resume** means monitoring is resumed. Selecting the current state again leaves timers unchanged. Each bound device has its own title and pair of actions. This per-device manual control also supports other BLE devices; names are not treated as proof of device type.
 
 Paused devices contribute to neither automatic lock nor unlock, including signal-loss locking. Other devices keep their any/all rules. With all devices paused, BLEUnlock takes no automatic action; macOS locking and Lock Screen Now remain available. The pause persists across app restarts, sleep/wake, recognized UUID rotation, and re-binding the same UUID until manually resumed.
 

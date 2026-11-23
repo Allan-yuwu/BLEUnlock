@@ -2,7 +2,7 @@
 
 ## Supported scope
 
-This patch provides **manual per-device pause/resume**, not automatic wear or charging detection. All bound devices are listed, so the user selects the actual Watch without relying on a renameable Bluetooth name. A checkmark and Resume label indicate manual pause. Paused devices are excluded from both lock and unlock any/all aggregation. No active device means neither action. Other devices and macOS native locking retain their own behavior.
+This patch provides **manual per-device pause/resume**, not automatic wear or charging detection. All bound devices are listed, so the user selects the actual Watch without relying on a renameable Bluetooth name. A device heading is followed by separate Pause and Resume actions. ✅ marks the current state (✅ Pause = paused, ✅ Resume = resumed); selecting that state again is a no-op before timer cancellation. The unknown wear/charging explanation remains in the heading tooltip. Paused devices are excluded from both lock and unlock any/all aggregation. No active device means neither action. Other devices and macOS native locking retain their own behavior.
 
 The pause UUID set is stored in `manuallyPausedDevices` in the app preferences. Pauses survive app relaunch and sleep/wake; the existing recognized UUID-remapping path transfers the pause to the new identity. No expiry is implied. Rebinding the same UUID retains pause. An unrecognized identity change still needs user selection; device identity is not inferred from charging behavior.
 
@@ -31,3 +31,9 @@ The original iCloud worktree build compiled but ad-hoc signing failed because iC
 - Full Xcode Debug and Release builds with **command-line-only** `MACOSX_DEPLOYMENT_TARGET=12.0`, `CODE_SIGNING_ALLOWED=NO`: passed. These prove current SDK compilation only, not macOS 10.13 runtime compatibility or signed Release readiness.
 - Local CLT build uses `arm64-apple-macosx10.13`; it emits existing SDK availability/deprecation warnings. Final gate passed: ad-hoc signature verification, DMG SHA-256/readonly mount/code-signature verification, and isolated 5-second startup smoke.
 - Apple Watch hardware/permission/actual lock/unlock integration and visual menu acceptance: not run; see manual matrix. No production install, tag or release.
+
+### Menu clarification (2026-11-23)
+
+The state/action ambiguity is removed: each bound device has its own heading, Pause and Resume rows, and an explicit ✅ prefix on the current state. No automatic wear detection or lock/unlock logic changes. Added regression assertions cover explicit action targets, current-state labels and idempotence. Actual visual acceptance and hardware locking remain separate checks.
+
+Menu revision verification: 42 standalone policy/action assertions passed; all localized string files parsed successfully. First review checked state/action labels and fixed repeated selection to return before any timer side effects; second review checked zero/multiple-device grouping, selector/tag validation, removal of obsolete toggle labels, and English/Chinese documentation consistency. The isolated CLT compile/sign/package/start gate was rerun. Production application and preferences were not modified by this revision.

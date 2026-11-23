@@ -14,6 +14,6 @@ Record Mac model, macOS/watchOS versions, Watch model, permissions, starting RSS
 | P6 | Bind two devices; pause one; test unlock any/all and lock any/all | Only unpaused devices count; zero active devices causes no action | Not run |
 | P7 | Resume one device with no fresh signal while another is close; select unlock all | No unlock until resumed device has a fresh close reading | Not run |
 | P8 | Allow recognized UUID rotation while paused; reopen submenu | Pause transfers to new UUID, including after restart | Not run |
-| P9 | Open submenu in English and Simplified Chinese; pause/resume repeatedly | Bound device names, actions and persistent pause summary remain clear; status says unknown | Not run |
+| P9 | Open submenu in English and Simplified Chinese; pause/resume repeatedly | Each device heading has separate Pause / Resume rows; exactly the current state has ✅; selecting it again leaves timers unchanged. Header tooltip explains unknown wear/charging status | Not run |
 
 Cleanup: restore manual pause, device bindings, RSSI settings and timeout settings to their starting values. Quit isolated test app; do not modify the installed production app or its Keychain.

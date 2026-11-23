@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Clarify the device pause menu with a device heading and separate Pause / Resume actions; mark the current state with ✅ and make repeated selection a no-op.
+
 - Add persistent per-device manual pause/resume for taking off or charging Apple Watch, excluding paused devices from lock/unlock aggregation and requiring fresh proximity after resume; explicitly show wear/charging status as unknown.
 
 - Make Release install the newly published asset through the public script and verify its version, bundle ID, and code signature before updating Homebrew.

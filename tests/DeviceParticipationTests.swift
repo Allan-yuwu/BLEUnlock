@@ -3,6 +3,17 @@ struct Tests {
     static func main() {
         var count = 0
         func check(_ value: Bool, _ message: String) { precondition(value, message); count += 1 }
+        check(DevicePauseAction.pause.pausesDevice, "pause targets paused state")
+        check(!DevicePauseAction.resume.pausesDevice, "resume targets resumed state")
+        check(!DevicePauseAction.pause.requiresChange(from: true), "repeat pause is a no-op")
+        check(!DevicePauseAction.resume.requiresChange(from: false), "repeat resume is a no-op")
+        check(DevicePauseAction.resume.requiresChange(from: true), "resume changes paused state")
+        check(DevicePauseAction.pause.requiresChange(from: false), "pause changes active state")
+        check(DevicePauseAction.pause.menuTitle("暂停", currentlyPaused: true) == "✅ 暂停", "paused checkmark labels current pause")
+        check(DevicePauseAction.resume.menuTitle("恢复", currentlyPaused: true) == "恢复", "paused resume is action only")
+        check(DevicePauseAction.pause.menuTitle("Pause", currentlyPaused: false) == "Pause", "active pause is action only")
+        check(DevicePauseAction.resume.menuTitle("Resume", currentlyPaused: false) == "✅ Resume", "active checkmark labels current resume")
+        check(DevicePauseAction(rawValue: 2) == nil, "invalid menu target rejected")
         let normal = DeviceParticipation()
         var paused = normal
         paused.setPaused(true)

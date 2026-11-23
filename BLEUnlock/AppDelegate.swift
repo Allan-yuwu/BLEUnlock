@@ -1815,30 +1815,42 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSMenuItemVa
 
     func refreshDevicePauseMenu() {
         devicePauseMenu.removeAllItems()
-        let hint = devicePauseMenu.addItem(withTitle: t("watch_state_unknown"), action: nil, keyEquivalent: "")
-        hint.isEnabled = false
-        devicePauseMenu.addItem(NSMenuItem.separator())
-        for uuid in ble.monitoredUUIDs.sorted(by: { monitoredDeviceTitle(uuid: $0) < monitoredDeviceTitle(uuid: $1) }) {
-            let paused = ble.isManuallyPaused(uuid)
-            let title = String(format: t(paused ? "device_resume_format" : "device_pause_format"), monitoredDeviceTitle(uuid: uuid))
-            let item = devicePauseMenu.addItem(withTitle: title, action: #selector(toggleDevicePause(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = uuid.uuidString
-            item.state = paused ? .on : .off
+        let orderedUUIDs = ble.monitoredUUIDs.sorted {
+            monitoredDeviceTitle(uuid: $0) < monitoredDeviceTitle(uuid: $1)
         }
-        if ble.monitoredUUIDs.isEmpty {
+        for (index, uuid) in orderedUUIDs.enumerated() {
+            if index > 0 { devicePauseMenu.addItem(NSMenuItem.separator()) }
+            let header = devicePauseMenu.addItem(
+                withTitle: String(format: t("device_pause_selected_format"), monitoredDeviceTitle(uuid: uuid)),
+                action: nil, keyEquivalent: "")
+            header.isEnabled = false
+            header.toolTip = t("watch_state_unknown")
+            let paused = ble.isManuallyPaused(uuid)
+            for action in [DevicePauseAction.pause, .resume] {
+                let label = t(action == .pause ? "device_pause_action" : "device_resume_action")
+                let item = devicePauseMenu.addItem(
+                    withTitle: action.menuTitle(label, currentlyPaused: paused),
+                    action: #selector(setDevicePause(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = uuid.uuidString
+                item.tag = action.rawValue
+            }
+        }
+        if orderedUUIDs.isEmpty {
             devicePauseMenu.addItem(withTitle: t("device_not_set"), action: nil, keyEquivalent: "")
         }
     }
 
-    @objc func toggleDevicePause(_ sender: NSMenuItem) {
-        guard let raw = sender.representedObject as? String, let uuid = UUID(uuidString: raw) else { return }
+    @objc func setDevicePause(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let uuid = UUID(uuidString: raw),
+              ble.isMonitoring(uuid: uuid), let action = DevicePauseAction(rawValue: sender.tag),
+              action.requiresChange(from: ble.isManuallyPaused(uuid)) else { return }
         automaticActionGeneration += 1
         wakeUnlockTimer?.invalidate()
         wakeUnlockTimer = nil
         postUnlockRetryTimer?.invalidate()
         postUnlockRetryTimer = nil
-        ble.setManuallyPaused(!ble.isManuallyPaused(uuid), for: uuid)
+        ble.setManuallyPaused(action.pausesDevice, for: uuid)
         updateMonitorStatusItems()
     }
 

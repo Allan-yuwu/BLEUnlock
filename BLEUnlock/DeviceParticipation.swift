@@ -34,3 +34,19 @@ func aggregateDevicePresence(_ snapshots: [DevicePresenceSnapshot], unlockAll: B
     return (unlockAll ? active.allSatisfy(close) : active.contains(where: close),
             lockAny ? active.contains { $0.participation.canParticipate && !$0.nearby } : active.allSatisfy { $0.participation.canParticipate && !$0.nearby })
 }
+
+// Explicit targets avoid turning an already-selected menu state into a toggle.
+enum DevicePauseAction: Int {
+    case resume = 0
+    case pause = 1
+
+    var pausesDevice: Bool { self == .pause }
+
+    func requiresChange(from currentlyPaused: Bool) -> Bool {
+        pausesDevice != currentlyPaused
+    }
+
+    func menuTitle(_ label: String, currentlyPaused: Bool) -> String {
+        requiresChange(from: currentlyPaused) ? label : "✅ " + label
+    }
+}
