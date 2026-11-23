@@ -2,8 +2,8 @@
 
 ## Please note that I don't distribute this app on the Mac App Store. You can find it here for free!
 
-![CI](https://github.com/bifrost-proxy/BLEUnlock/actions/workflows/test.yml/badge.svg)
-![Github All Releases](https://img.shields.io/github/downloads/bifrost-proxy/BLEUnlock/total.svg)
+![CI](https://github.com/Allan-yuwu/BLEUnlock/actions/workflows/test.yml/badge.svg)
+![Github All Releases](https://img.shields.io/github/downloads/Allan-yuwu/BLEUnlock/total.svg)
 
 BLEUnlock is a small menu bar utility that locks and unlocks your Mac by proximity of your iPhone, Apple Watch, or any other Bluetooth Low Energy device.
 
@@ -25,6 +25,8 @@ This document is also available in [Simplified Chinese (简体中文)](README.md
 - Device-list scanning reads advertisements only and never connects to unbound peripherals
 - Devices with resolved MAC addresses appear in black; unresolved devices appear in gray, for at-a-glance distinction.
 - Hold ⌥ (Option) in the device list to reveal full MAC address and UUID. Release and reopen for compact display.
+
+This fork builds on [bifrost-proxy/BLEUnlock](https://github.com/bifrost-proxy/BLEUnlock); attribution to the original project and contributors is retained.
 
 ## Security Notice
 
@@ -48,28 +50,23 @@ For users who need both security and convenience, consider using Apple's built-i
 - macOS 10.13 (High Sierra) or later
 - iPhone 5s or newer, Apple Watch (all), or another BLE device that has [static MAC address](#notes-on-mac-address) and transmits signal periodically
 
+Version 1.15.3 is ad-hoc signed and not Apple-notarized. Availability on GitHub does not imply Apple certification.
+
 ## Installation
 
-### Using Homebrew Cask
-
-```sh
-brew install --cask bifrost-proxy/tap/unlock
-```
-
-> Homebrew uses `owner/tap/cask` names. The npm-style name `@bifrost-proxy/unlock` is not valid Homebrew syntax.
-> Releases without Developer ID use ad-hoc signing; the Cask removes the app quarantine attribute only after Homebrew verifies SHA-256 and installs the app.
+This fork is distributed through [GitHub Releases](https://github.com/Allan-yuwu/BLEUnlock/releases) only; it does not publish a Homebrew tap.
 
 ### Using the installation script
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/bifrost-proxy/BLEUnlock/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Allan-yuwu/BLEUnlock/master/install.sh | bash
 ```
 
 The script downloads the latest DMG and checksum from this repository, verifies SHA-256, app signature integrity, and the bundle ID, replaces `/Applications/BLEUnlock.app`, and verifies the installed signature again.
 
 ### Manual installation
 
-Download the dmg file from [Releases](https://github.com/bifrost-proxy/BLEUnlock/releases), open it, and move BLEUnlock to the Applications folder.
+Download the dmg file from [Releases](https://github.com/Allan-yuwu/BLEUnlock/releases), open it, and move BLEUnlock to the Applications folder.
 
 > The release pipeline always verifies bundle signature integrity. It uses Developer ID signing and notarization when configured, otherwise it falls back to ad-hoc signing so nested executables cannot leave the bundle with missing or inconsistent signatures. Ad-hoc signing does not establish developer trust, so macOS may still block the first launch; right-click the app in Finder and choose **Open**.
 >
@@ -277,7 +274,7 @@ scripts/build-local.sh --verify
 This command only requires macOS Command Line Tools. It uses an isolated bundle identifier to compile and briefly launch the app, verify its signature, create a DMG and SHA-256 checksum, and validate a read-only mount without triggering automatic locking or unlocking. Formal releases are still built with full Xcode in GitHub Actions.
 
 - See [agents.md](agents.md) for the complete development, testing, review, PR, and CI workflow.
-- See [docs/RELEASING.md](docs/RELEASING.md) for tag, GitHub Release, and Homebrew publishing procedures.
+- See [docs/RELEASING.md](docs/RELEASING.md) for tag and GitHub Release publishing procedures.
 - User documentation is maintained only in this English README and the [Simplified Chinese README](README.md). Keep both files synchronized when features, installation, or security guidance changes.
 
 ## Project origin and technical credits
@@ -299,3 +296,11 @@ They are originally designed by Google LLC and licensed under Apache License ver
 MIT
 
 Copyright © 2019-2022 Takeshi Sone. MIT Licensed.<br>Copyright © 2026 Skyearn. MIT Licensed.
+
+### Manually pause a device while taking off or charging your watch
+
+Choose **Pause / Resume Device**, verify **Current selected device: XXX**, then choose the separate **Pause** or **Resume** action. ✅ marks the current state: **✅ Pause** means paused; **✅ Resume** means monitoring is resumed. Selecting the current state again leaves timers unchanged. Each bound device has its own title and pair of actions. This per-device manual control also supports other BLE devices; names are not treated as proof of device type.
+
+Paused devices contribute to neither automatic lock nor unlock, including signal-loss locking. Other devices keep their any/all rules. With all devices paused, BLEUnlock takes no automatic action; macOS locking and Lock Screen Now remain available. The pause persists across app restarts, sleep/wake, recognized UUID rotation, and re-binding the same UUID until manually resumed.
+
+Resuming clears cached proximity. Only a fresh close reading may unlock; weak readings use the lock delay and missing readings use the signal timeout. Wear/charging status is explicitly **unknown**: this release does not automatically detect either state. See [feasibility and verification](docs/APPLE_WATCH_PAUSE.md).

@@ -2,8 +2,8 @@
 
 ## 请注意：本应用不在 Mac App Store 发布，你可以在这里免费获取。
 
-![CI](https://github.com/bifrost-proxy/BLEUnlock/actions/workflows/test.yml/badge.svg)
-![Github All Releases](https://img.shields.io/github/downloads/bifrost-proxy/BLEUnlock/total.svg)
+![CI](https://github.com/Allan-yuwu/BLEUnlock/actions/workflows/test.yml/badge.svg)
+![Github All Releases](https://img.shields.io/github/downloads/Allan-yuwu/BLEUnlock/total.svg)
 
 BLEUnlock 是一款常驻菜单栏的小工具，可以根据 iPhone、Apple Watch 或其他蓝牙低功耗设备与 Mac 的距离，自动锁定或解锁 Mac。
 
@@ -25,6 +25,8 @@ BLEUnlock 是一款常驻菜单栏的小工具，可以根据 iPhone、Apple Wat
 - 扫描设备列表时只读取广播信息，不会主动连接未绑定设备
 - 已解析出 MAC 地址的设备以黑色显示，未解析的以灰色显示，一目了然。
 - 按住 ⌥ 键展开设备列表可查看完整的 MAC 地址和 UUID，松开重新展开恢复简洁显示。
+
+本 fork 基于 [bifrost-proxy/BLEUnlock](https://github.com/bifrost-proxy/BLEUnlock) 的改进继续开发，原始项目与各贡献者归属保留。
 
 ## 安全须知
 
@@ -48,28 +50,23 @@ BLEUnlock 通过 BLE MAC 地址识别设备，并根据 RSSI 信号强度判断�
 - macOS 10.13 (High Sierra) 或更高版本
 - iPhone 5s 及以上、任意 Apple Watch，或任意会周期性广播且使用 [静态 MAC 地址](#关于-mac-地址) 的 BLE 设备
 
+本次 1.15.3 使用 ad-hoc 签名，未经 Apple 公证。GitHub 可下载不代表 Apple 官方认证。
+
 ## 安装
 
-### 使用 Homebrew Cask
-
-```sh
-brew install --cask bifrost-proxy/tap/unlock
-```
-
-> Homebrew 使用 `owner/tap/cask` 命名；npm 风格的 `@bifrost-proxy/unlock` 不是有效的 Homebrew 语法。
-> 当前无 Developer ID 的发布会使用 ad-hoc 签名；Cask 会在完成 SHA-256 校验和安装后移除 App 的隔离标记。
+本 fork 仅通过 [GitHub Releases](https://github.com/Allan-yuwu/BLEUnlock/releases) 发布，不提供 Homebrew Tap。
 
 ### 使用安装脚本
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/bifrost-proxy/BLEUnlock/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Allan-yuwu/BLEUnlock/master/install.sh | bash
 ```
 
 脚本会从本仓库下载最新 DMG 和校验文件，校验 SHA-256、App 签名完整性和 Bundle ID 后覆盖安装到 `/Applications/BLEUnlock.app`，并对安装结果再次执行签名校验。
 
 ### 手动安装
 
-从 [Releases](https://github.com/bifrost-proxy/BLEUnlock/releases) 下载 dmg 文件，打开后将 BLEUnlock 拖到“应用程序”文件夹。
+从 [Releases](https://github.com/Allan-yuwu/BLEUnlock/releases) 下载 dmg 文件，打开后将 BLEUnlock 拖到“应用程序”文件夹。
 
 > 发布流水线始终会校验应用签名完整性：配置 Developer ID 时使用正式签名和公证，否则使用 ad-hoc 签名，避免因内部可执行文件未签名或签名不一致而出现“应用已损坏”。ad-hoc 签名不能证明开发者身份，macOS 仍可能在首次启动时拦截；可在 Finder 中右键应用并选择“打开”。
 >
@@ -275,7 +272,7 @@ scripts/build-local.sh --verify
 该命令只依赖 macOS Command Line Tools，会使用隔离的 Bundle ID 完成编译、短时启动、签名检查、DMG、SHA-256 和只读挂载验收，不会触发自动锁屏或自动解锁。正式 Release 仍由 GitHub Actions 使用完整 Xcode 构建。
 
 - 完整开发、测试、Review、PR 和 CI 规则见 [agents.md](agents.md)。
-- 正式 tag、GitHub Release 和 Homebrew 发布流程见 [docs/RELEASING.md](docs/RELEASING.md)。
+- 正式 tag 和 GitHub Release 发布流程见 [docs/RELEASING.md](docs/RELEASING.md)。
 - 用户文档只维护当前中文 README 和 [English README](README.en.md)；功能、安装和安全说明有变化时必须同步更新两份文档。
 
 ## 项目来源与技术致谢
@@ -296,3 +293,12 @@ scripts/build-local.sh --verify
 MIT
 
 Copyright © 2019-2022 Takeshi Sone. MIT Licensed.<br>Copyright © 2026 Skyearn. MIT Licensed.
+
+### 摘下手表或充电时手动暂停
+
+在菜单栏选择「暂停／恢复设备」，先核对「当前选定设备：XXX」，再选择独立的「暂停」或「恢复」按钮。当前状态前显示 ✅：例如「✅ 暂停」代表已经暂停，「✅ 恢复」代表监控已恢复。重复选择当前状态不会重置计时器。多设备时，每台设备都有独立标题和这两个按钮。这是对每台已绑定设备的手动控制，也适用于其他 BLE 设备，不根据设备名称猜测类型。
+
+- 暂停设备不参与自动锁屏或自动解锁；其信号丢失也不会触发 BLEUnlock 锁屏。其他未暂停设备仍按原来的任一／全部规则工作。全部暂停时，BLEUnlock 不自动锁屏或解锁；系统自身锁屏与「立即锁屏」照常。
+- 暂停记录会保留到手动恢复，包括应用重启、Mac 睡眠唤醒及已识别的设备 UUID 轮转。即使取消绑定再绑定同一 UUID，也保持手动暂停。
+- 恢复后清空旧信号，重新测距。只有新的靠近信号达到解锁阈值才可自动解锁；弱信号按原锁屏延时处理，没有新信号则按无信号超时处理。
+- 设备标题的提示文字说明「手表佩戴／充电状态：未知（手动控制）」。它**不会自动判断佩戴或充电**，也不把失联、静止或信号弱当成摘下。详见 [可行性与验证记录](docs/APPLE_WATCH_PAUSE.md)。

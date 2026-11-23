@@ -54,3 +54,12 @@
 "wake_on_proximity" = "画面スリープから復帰";
 "wake_without_unlocking" = "アンロックせずに画面復帰";
 "pair_for_mac_hint" = "ペアリングでランダムアドレスを安定追跡 →";
+
+/* Manual device pause; watch state is not inferred. */
+"device_pause_menu" = "Pause / Resume Device";
+"watch_state_unknown" = "Watch wear / charging state: unknown (manual control)";
+"device_pause_selected_format" = "Current selected device: %@";
+"device_pause_action" = "Pause";
+"device_resume_action" = "Resume";
+"all_devices_manually_paused" = "All devices manually paused";
+"some_devices_manually_paused" = "%d of %d devices manually paused";

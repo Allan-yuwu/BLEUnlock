@@ -113,6 +113,7 @@ xcrun --sdk macosx swiftc \
   -import-objc-header "${ROOT_DIR}/BLEUnlock/BLEUnlock-Bridging-Header.h" \
   "${ROOT_DIR}/BLEUnlock/AppDelegate.swift" \
   "${ROOT_DIR}/BLEUnlock/BLE.swift" \
+  "${ROOT_DIR}/BLEUnlock/DeviceParticipation.swift" \
   "${ROOT_DIR}/BLEUnlock/LEDeviceInfo.swift" \
   "${ROOT_DIR}/BLEUnlock/appleDeviceNames.swift" \
   "${ROOT_DIR}/BLEUnlock/checkUpdate.swift" \
@@ -130,6 +131,12 @@ xcrun --sdk macosx swiftc \
   -framework login \
   -lsqlite3 \
   -o "${EXECUTABLE}"
+
+# New Swift toolchains may emit a dSYM alongside the executable. Debug symbols
+# are build artifacts, not nested executable code to ship/sign inside the app.
+if [[ -d "${EXECUTABLE}.dSYM" ]]; then
+  mv "${EXECUTABLE}.dSYM" "${OBJECT_DIR}/BLEUnlockLocal.dSYM"
+fi
 
 cp "${ROOT_DIR}/BLEUnlock/Info.plist" "${CONTENTS_DIR}/Info.plist"
 plutil -replace CFBundleExecutable -string BLEUnlockLocal "${CONTENTS_DIR}/Info.plist"

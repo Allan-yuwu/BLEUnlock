@@ -1,8 +1,13 @@
 # Release Notes
 
-## Unreleased
 
-- Make Release install the newly published asset through the public script and verify its version, bundle ID, and code signature before updating Homebrew.
+## 1.15.3
+
+- Add persistent manual per-device pause/resume. Pause a charging or idle Apple Watch to prevent distance or signal-loss locking when moving the Mac away. Wear and charging states are not detected automatically.
+- Paused devices contribute to neither BLEUnlock automatic locking nor proximity unlocking. Other active devices retain their rules; macOS locking and native Unlock with Apple Watch settings are not changed.
+- Show the selected device with separate Pause / Resume actions and a ✅ current-state marker. Resume requires fresh proximity; selecting the current state again leaves timers unchanged.
+- Route this fork's downloads, installer and app updates to Allan-yuwu/BLEUnlock while preserving the existing bundle, preference and Keychain identity. Publish GitHub Releases only; do not update the upstream Homebrew tap.
+- This distribution is ad-hoc signed and not Apple-notarized or Apple-certified. macOS may block first launch. Bluetooth locking, permissions and different hardware still require user testing.
 
 ## 1.15.1
 
